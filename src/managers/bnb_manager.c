@@ -2,6 +2,7 @@
 
 #include "stdio.h"
 
+
 int current_pid = -1;
 int *pids;
 int valid_count = 0;
@@ -15,9 +16,9 @@ addr_t **virtual_mem;
 
 #define SIZEOFVALUES 4
 
-// Utiles
+#pragma region Utils
 
-// PID
+#pragma region PIDS
 int find_pid(int pid)
 {
   for (int i = 0; i < valid_count; i++)
@@ -37,8 +38,9 @@ int add_pid(int pid)
   valid_count += 1;
   return 0;
 }
+#pragma endregion
 
-// STACK
+#pragma region STACK
 int sim_stack_op(int is_del)
 {
   int stack_pointer_temp = stack_pointer[current_pid] + (is_del ? SIZEOFVALUES : -SIZEOFVALUES);
@@ -53,8 +55,9 @@ int valid_stack_op(int is_del)
     return 1;
   return 0;
 }
+#pragma endregion
 
-// HEAP
+#pragma region HEAP
 int find_addr(addr_t addr)
 {
   for (int i = 0; i < heap_pointer[current_pid]; i++)
@@ -109,13 +112,15 @@ int add_addr(addr_t addr)
   stack_pointer[current_pid] += 1;
   return 0;
 }
-
+#pragma endregion
+#pragma endregion
 
 // Esta función se llama cuando se inicializa un caso de prueba
 void m_bnb_init(int argc, char **argv)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  current_pid = -1;
+
+  
 }
 
 // Reserva un espacio en el heap de tamaño 'size' y establece un puntero al
