@@ -1,27 +1,25 @@
 #include "bnb_manager.h"
 
 #include "stdio.h"
-
+#include "../memory.h"
+#define MAX_PROGRAM_COUNT 20 // this value must be equal to the number of programs in test.c
 
 int current_pid = -1;
 int *pids;
-int valid_count = 0;
+size_t valid_count = 0;
 addr_t *bases;
-int bound;
+size_t bound;
 
-int *heap_pointer;
-int *stack_pointer;
+size_t *heap_pointer;
+size_t *stack_pointer;
 
-addr_t **virtual_mem;
+int **virtual_mem; // 1 if is reserved
 
 #define SIZEOFVALUES 4
 
-#pragma region Utils
-
-#pragma region PIDS
 int find_pid(int pid)
 {
-  for (int i = 0; i < valid_count; i++)
+  for (size_t i = 0; i < valid_count; i++)
     if (pids[i] == pid)
       return i;
   return -1;
@@ -38,12 +36,10 @@ int add_pid(int pid)
   valid_count += 1;
   return 0;
 }
-#pragma endregion
 
-#pragma region STACK
 int sim_stack_op(int is_del)
 {
-  int stack_pointer_temp = stack_pointer[current_pid] + (is_del ? SIZEOFVALUES : -SIZEOFVALUES);
+  size_t stack_pointer_temp = stack_pointer[current_pid] + (is_del ? SIZEOFVALUES : -SIZEOFVALUES);
 
   if (stack_pointer_temp > bound || stack_pointer_temp < heap_pointer[current_pid])
     return 1;
@@ -55,47 +51,6 @@ int valid_stack_op(int is_del)
     return 1;
   return 0;
 }
-#pragma endregion
-
-#pragma region HEAP
-int find_addr(addr_t addr)
-{
-  for (int i = 0; i < heap_pointer[current_pid]; i++)
-    if (virtual_mem[current_pid][i] == addr)
-      return i;
-  return -1;
-}
-
-int delete_addr(addr_t addr)
-{
-  int index = find_addr(addr);
-  if (index < 0)
-    return 1;
-
-  while (index <= heap_pointer[current_pid])
-  {
-    virtual_mem[current_pid][index] = virtual_mem[current_pid][index + 1];
-    index += 1;
-  }
-  heap_pointer -= 1;
-  return 0;
-}
-
-int valid_free_heap_op(addr_t addr)
-{
-  int index = find_addr(addr);
-  if (index < 0)
-    return 1;
-  return 0;
-}
-
-int valid_malloc_heap_op(size_t size)
-{
-  int spaces = size / SIZEOFVALUES;
-  if (heap_pointer[current_pid] + spaces > heap_pointer[current_pid])
-    return 1;
-  return 0;
-}
 
 int in_addr(addr_t addr)
 {
@@ -104,23 +59,81 @@ int in_addr(addr_t addr)
   return 0;
 }
 
-int add_addr(addr_t addr)
+int find_addr(addr_t addr)
 {
-  if (find_addr(addr) >= 0 || in_addr(addr) || valid_malloc_heap_op(SIZEOFVALUES))
+  if (in_addr(addr) || addr > stack_pointer[current_pid])
+    return -1;
+  return addr - bases[current_pid];
+}
+
+int delete_addr(addr_t addr)
+{
+  int index = find_addr(addr);
+  if (index < 0 || virtual_mem[current_pid][index] == 0)
     return 1;
-  virtual_mem[current_pid][stack_pointer[current_pid]] = addr;
-  stack_pointer[current_pid] += 1;
+
+  virtual_mem[current_pid][index] = 0;
   return 0;
 }
-#pragma endregion
-#pragma endregion
+
+int valid_malloc_heap_op(size_t size)
+{
+  size_t spaces = size / SIZEOFVALUES;
+  if (heap_pointer[current_pid] + spaces > bound || heap_pointer[current_pid] + spaces > stack_pointer[current_pid])
+    return 1;
+  return 0;
+}
+
+int update_heap_pointer() // TODO: check this function
+{
+  for (size_t i = 0; i < stack_pointer[current_pid]; i++)
+    if (virtual_mem[current_pid][i])
+      heap_pointer[current_pid] = i;
+  return 0;
+}
+
+int resb_addr(addr_t addr)
+{
+  if (find_addr(addr) < 0 || virtual_mem[current_pid][find_addr(addr)] || valid_malloc_heap_op(SIZEOFVALUES))
+    return 1;
+  virtual_mem[current_pid][stack_pointer[current_pid]] = 1;
+  update_heap_pointer();
+  return 0;
+}
 
 // Esta función se llama cuando se inicializa un caso de prueba
 void m_bnb_init(int argc, char **argv)
 {
+  // initialize global variables
   current_pid = -1;
 
-  
+  pids = (int *)malloc(MAX_PROGRAM_COUNT * sizeof(int));
+  valid_count = 0;
+
+  bases = (addr_t *)malloc(MAX_PROGRAM_COUNT * sizeof(addr_t));
+  bound = 0;
+
+  heap_pointer = (size_t *)malloc(MAX_PROGRAM_COUNT * sizeof(size_t));
+  stack_pointer = (size_t *)malloc(MAX_PROGRAM_COUNT * sizeof(size_t));
+
+  virtual_mem = (int **)malloc(MAX_PROGRAM_COUNT * sizeof(int *));
+  for (int i = 0; i < MAX_PROGRAM_COUNT; i++)
+    virtual_mem[i] = (int *)malloc(bound * sizeof(int));
+
+  // Reset to 0
+  for (int i = 0; i < MAX_PROGRAM_COUNT; i++)
+    for (size_t j = 0; j < bound; j++)
+      virtual_mem[i][j] = 0;
+
+  // initialize sectors
+  bound = m_size() / MAX_PROGRAM_COUNT;
+
+  for (int i = 0; i < MAX_PROGRAM_COUNT; i++)
+  {
+    bases[i] = i * bound;
+    stack_pointer[i] = bound - 1;
+    heap_pointer[i] = 0;
+  }
 }
 
 // Reserva un espacio en el heap de tamaño 'size' y establece un puntero al
