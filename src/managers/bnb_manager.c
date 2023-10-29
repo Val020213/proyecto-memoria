@@ -75,6 +75,14 @@ int find_addr(addr_t addr)
   return addr - bases[current_pid_index];
 }
 
+int update_heap_pointer() // TODO: check this function
+{
+  for (size_t i = 0; i < stack_pointer[current_pid_index]; i++)
+    if (virtual_mem[current_pid_index][i])
+      heap_pointer[current_pid_index] = i;
+  return 0;
+}
+
 int delete_addr(addr_t addr)
 {
   int index = find_addr(addr);
@@ -110,14 +118,6 @@ int find_malloc_size(size_t size, size_t *slots)
       count = 0;
   }
   return 1;
-}
-
-int update_heap_pointer() // TODO: check this function
-{
-  for (size_t i = 0; i < stack_pointer[current_pid_index]; i++)
-    if (virtual_mem[current_pid_index][i])
-      heap_pointer[current_pid_index] = i;
-  return 0;
 }
 
 int resb_addr(size_t index_addr)
@@ -192,13 +192,15 @@ int m_bnb_malloc(size_t size, ptr_t *out)
   size_t slot[size];
 
   if (find_malloc_size(size, slot))
+  {
+    printf("ERROR: No hay espacio en el heap [bnb_malloc / find malloc size()] \n");
     return 1;
-
+  }
   for (size_t i = 0; i < size; i++)
     resb_addr(slot[i]);
 
   out->addr = bases[current_pid_index] + slot[0];
-
+  printf("Se resevo %ld para el proceso %d \n", size, pids[current_pid_index]);
   return 0;
 }
 
@@ -252,9 +254,11 @@ void m_bnb_on_ctx_switch(process_t process)
 {
   set_curr_owner(process.pid);
   current_pid_index = find_pid(process.pid);
+
   if (current_pid_index < 0)
   {
-    current_pid_index = (process.pid);
+    current_pid_index = get_free_pid();
+    pids[current_pid_index] = process.pid;
     m_set_owner(bases[current_pid_index], bases[current_pid_index] + bound);
   }
 }
