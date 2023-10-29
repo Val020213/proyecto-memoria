@@ -170,8 +170,16 @@ void m_bnb_init(int argc, char **argv)
 int m_bnb_malloc(size_t size, ptr_t *out)
 {
   size_t slot[size];
+
   if (find_malloc_size(size, slot))
     return 1;
+
+  for (size_t i = 0; i < size; i++)
+    resb_addr(slot[i]);
+
+  out->addr = bases[current_pid_index] + slot[0];
+
+  return 0;
 }
 
 // Libera un espacio de memoria dado un puntero.
