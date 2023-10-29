@@ -185,8 +185,7 @@ int m_bnb_malloc(size_t size, ptr_t *out)
 // Libera un espacio de memoria dado un puntero.
 int m_bnb_free(ptr_t ptr)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  return delete_addr(ptr.addr);
 }
 
 // Agrega un elemento al stack
