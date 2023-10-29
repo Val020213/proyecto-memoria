@@ -91,7 +91,7 @@ size_t min(size_t x, size_t y)
 
 int find_malloc_size(size_t size, size_t *slots)
 {
-  size_t spaces = size / SIZEOFVALUES;
+  int spaces = size / SIZEOFVALUES;
   int count = 0;
   for (size_t i = 0; i < min(stack_pointer[current_pid_index], bound); i++)
   {
@@ -124,6 +124,7 @@ int resb_addr(size_t index_addr)
     return 1;
   virtual_mem[current_pid_index][index_addr] = 1;
   update_heap_pointer();
+  return 0;
 }
 
 // Esta función se llama cuando se inicializa un caso de prueba
