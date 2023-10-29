@@ -201,24 +201,25 @@ int m_bnb_malloc(size_t size, ptr_t *out)
     // printf("Error en Malloc: Mostrando el estado de la memoria virtual ...\n");
     // printf("stack: 0x%zx  bound: 0x%zx \n", stack_pointer[current_pid_index], bound);
 
-    for (size_t i = 0; i < min(stack_pointer[current_pid_index], bound); i++)
-    {
-      printf("%d ", virtual_mem[current_pid_index][i]);
-    }
-    printf("\n");
+    // for (size_t i = 0; i < min(stack_pointer[current_pid_index], bound); i++)
+    // {
+    //   printf("%d ", virtual_mem[current_pid_index][i]);
+    // }
+    // printf("\n");
 
     return 1;
   }
   // printf("Reservando...\n");
-  // for (size_t i = 0; i < size; i++)
-  // {
-  //   if (resb_addr(slot[i]))
-  //     printf("Error reservando %ld\n", slot[i]);
+  for (size_t i = 0; i < size; i++)
+  {
+    resb_addr(slot[i]);
+    // if (resb_addr(slot[i]))
+    //   printf("Error reservando %ld\n", slot[i]);
 
-  //   else
-  //     printf("Se reservo addr: 0x%zx para el proceso %d , MEMO: %d\n",
-  //            bases[current_pid_index] + slot[i], pids[current_pid_index], virtual_mem[current_pid_index][slot[i]]);
-  // }
+    // else
+    //   printf("Se reservo addr: 0x%zx para el proceso %d , MEMO: %d\n",
+    //          bases[current_pid_index] + slot[i], pids[current_pid_index], virtual_mem[current_pid_index][slot[i]]);
+  }
   out->addr = bases[current_pid_index] + slot[0];
   // printf("Se resevo %ld bytes para el proceso %d \n", size, pids[current_pid_index]);
 
@@ -266,7 +267,7 @@ int m_bnb_store(addr_t addr, byte val)
 {
   if (in_addr(addr) || !virtual_mem[current_pid_index][find_addr(addr)])
   {
-    // printf("ERROR [m_bnb_store]: ADDR:%d , MEMO: %d AddrOf:0x%zx \n", in_addr(addr), virtual_mem[current_pid_index][find_addr(addr)], addr);
+   // printf("ERROR [m_bnb_store]: ADDR:%d , MEMO: %d AddrOf:0x%zx \n", in_addr(addr), virtual_mem[current_pid_index][find_addr(addr)], addr);
     return 1;
   }
   m_write(addr, val);
