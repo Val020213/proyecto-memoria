@@ -120,7 +120,7 @@ int seg_add_pid(int pid)
   }
 
   seg_pids[free] = pid;
-  return 0;
+  return free;
 }
 
 int seg_del_pid(int pid)
@@ -144,6 +144,20 @@ size_t seg_min(size_t x, size_t y)
 
 // free list
 
+int seg_resb(int l, int r)
+{
+  for (int i = l; i < r; i++)
+  {
+    if (seg_virtual_mem[i] != -1)
+    {
+      printf("Error: Addr %d is not free, Owner: %d  Currentpid : %d  \n", i, seg_virtual_mem[i], seg_pids[seg_current_pid_index]);
+      return 1;
+    }
+    seg_virtual_mem[i] = seg_pids[seg_current_pid_index];
+  }
+  return 0;
+}
+
 void free_v_memo(int l, int r)
 {
   for (int i = l; i < r; i++)
@@ -161,7 +175,7 @@ int first_fit(size_t need)
       size_t j = i;
       while (j < seg_virtual_mem_size && seg_virtual_mem[j] == -1)
         j++;
-      if (j - i >= need)
+      if (j - i > need)
         return i;
       i = j;
     }
@@ -197,6 +211,7 @@ int extend_proc(int need_stack, int need_heap)
     addr_stack--;
     need_stack--;
   }
+  seg_resb(addr_stack, seg_base[seg_current_pid_index] - seg_bound_stack[seg_current_pid_index]);
   m_set_owner(addr_stack, seg_base[seg_current_pid_index] - seg_bound_stack[seg_current_pid_index]);
   seg_bound_stack[seg_current_pid_index] += need_stack;
 
@@ -213,7 +228,7 @@ int extend_proc(int need_stack, int need_heap)
     addr_heap++;
     need_heap--;
   }
-
+  seg_resb(seg_base[seg_current_pid_index] + seg_bound_seg_heap[seg_current_pid_index], addr_heap + 1);
   m_set_owner(seg_base[seg_current_pid_index] + seg_bound_seg_heap[seg_current_pid_index], addr_heap);
   seg_bound_seg_heap[seg_current_pid_index] += need_heap;
   return 0;
@@ -228,12 +243,35 @@ void m_seg_init(int argc, char **argv)
   printf("Agg el bit de seg: %d\n", seg_direction_size);
 }
 
+int create_new_space(size_t need)
+{
+  int free_space = first_fit(need + seg_default_stack_bound);
+
+  if (free_space < 0)
+  {
+    printf("Error: No hay espacio para crear un nuevo proceso\n");
+    return 1;
+  }
+
+  seg_stack[seg_current_pid_index] = 1;
+  seg_bound_stack[seg_current_pid_index] = seg_default_stack_bound;
+
+  seg_base[seg_current_pid_index] = free_space + seg_default_stack_bound;
+  seg_bound_seg_heap[seg_current_pid_index] = need;
+  seg_heap[seg_current_pid_index] = 0;
+
+  seg_resb(free_space, free_space + seg_default_stack_bound);
+  m_set_owner(free_space, free_space + seg_default_stack_bound + need - 1);
+}
+
 // Reserva un espacio en el seg_heap de tamaño 'size' y establece un puntero al
 // inicio del espacio reservado.
 int m_seg_malloc(size_t size, ptr_t *out)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  if (seg_base[seg_current_pid_index] < 0)
+  {
+    
+  }
 }
 
 // Libera un espacio de memoria dado un puntero.
@@ -274,13 +312,24 @@ int m_seg_store(addr_t addr, byte val)
 // Notifica un cambio de contexto al proceso 'next_pid'
 void m_seg_on_ctx_switch(process_t process)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  set_curr_owner(process.pid);
+  seg_current_pid_index = seg_find_pid(process.pid);
+  if (seg_current_pid_index < 0)
+  {
+    seg_current_pid_index = seg_add_pid(process.pid);
+    seg_base[seg_current_pid_index] = -1;
+  }
 }
 
 // Notifica que un proceso ya terminó su ejecución
 void m_seg_on_end_process(process_t process)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  seg_del_pid(process.pid);
+
+  for (int i = 0; i < seg_virtual_mem_size; i++)
+    if (seg_virtual_mem[i] == process.pid)
+    {
+      seg_virtual_mem[i] = -1;
+      m_unset_owner(i, i);
+    }
 }
