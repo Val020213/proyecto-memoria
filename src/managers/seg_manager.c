@@ -188,10 +188,10 @@ void fusion_fit()
   {
     if (seg_pids[i] >= 0)
     {
-      if (seg_stack[i] < seg_bound_stack[i])
-        free_v_memo(seg_stack[i], seg_bound_stack[i] + 1);
-      if (seg_heap[i] < seg_bound_seg_heap[i])
-        free_v_memo(seg_heap[i], seg_bound_seg_heap[i] + 1);
+      if (seg_stack[i] < seg_bound_stack[i] - 1)
+        free_v_memo(seg_stack[i], seg_bound_stack[i]);
+      if (seg_heap[i] < seg_bound_seg_heap[i] - 1)
+        free_v_memo(seg_heap[i], seg_bound_seg_heap[i]);
     }
   }
 }
@@ -234,13 +234,24 @@ int extend_proc(int need_stack, int need_heap)
   return 0;
 }
 
-// Esta función se llama cuando se inicializa un caso de prueba
-void m_seg_init(int argc, char **argv)
+int seg_find_malloc_size(size_t size, size_t *slots)
 {
-  seg_direction_size = how_many_bits_needed(m_size());
-  printf("Tamanno de la memoria %ld, Se necesitan %d bits para direccionar toda la memoria\n", m_size(), seg_direction_size);
-  seg_direction_size += seg_bits;
-  printf("Agg el bit de seg: %d\n", seg_direction_size);
+  int spaces = size;
+  int count = 0;
+  for (size_t i = seg_base[seg_current_pid_index]; i < seg_base[seg_current_pid_index] + seg_bound_seg_heap[seg_current_pid_index]; i++)
+  {
+    if (count == spaces)
+      return 0;
+
+    if (seg_virtual_mem[i] == -1)
+    {
+      slots[count] = i;
+      count++;
+    }
+    else
+      count = 0;
+  }
+  return 1;
 }
 
 int create_new_space(size_t need)
@@ -258,10 +269,20 @@ int create_new_space(size_t need)
 
   seg_base[seg_current_pid_index] = free_space + seg_default_stack_bound;
   seg_bound_seg_heap[seg_current_pid_index] = need;
-  seg_heap[seg_current_pid_index] = 0;
+  seg_heap[seg_current_pid_index] = need - 1;
 
-  seg_resb(free_space, free_space + seg_default_stack_bound);
+  seg_resb(free_space, free_space + seg_default_stack_bound + need);
   m_set_owner(free_space, free_space + seg_default_stack_bound + need - 1);
+  return 0;
+}
+
+// Esta función se llama cuando se inicializa un caso de prueba
+void m_seg_init(int argc, char **argv)
+{
+  seg_direction_size = how_many_bits_needed(m_size());
+  printf("Tamanno de la memoria %ld, Se necesitan %d bits para direccionar toda la memoria\n", m_size(), seg_direction_size);
+  seg_direction_size += seg_bits;
+  printf("Agg el bit de seg: %d\n", seg_direction_size);
 }
 
 // Reserva un espacio en el seg_heap de tamaño 'size' y establece un puntero al
@@ -270,15 +291,55 @@ int m_seg_malloc(size_t size, ptr_t *out)
 {
   if (seg_base[seg_current_pid_index] < 0)
   {
-    
+    printf("Creando nuevo espacio de direccion\n");
+    create_new_space(size);
+    printf("Se creo un nuevo espacio de direccion\n Base:%d Heap:%d  Bound:%d\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    out->addr = 0;
+    return 0;
   }
+
+  size_t slot[size];
+
+  if (seg_find_malloc_size(size, slot))
+  {
+    printf("Error: No hay espacio para crear un nuevo proceso, hay que extender el heap Heap:%d Bound%d\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+
+    if (extend_proc(0, seg_bound_seg_heap[seg_current_pid_index] - seg_heap[seg_current_pid_index] + size))
+    {
+      printf("Error: No se pudo extender el heap\n");
+      return 1;
+    }
+    printf("Se extendio el heap dentro de su bound Heap:%d  Bound:%d\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    out->addr = seg_heap[seg_current_pid_index] + 1;
+  }
+
+  else
+  {
+    printf("Se encontro espacio para crear un nuevo proceso dentro del propio heap %d -> %d\n", slot[0], slot[size - 1]);
+    seg_resb(slot[0], slot[size - 1] + 1);
+    m_set_owner(slot[0], slot[size - 1]);
+    out->addr = slot[0];
+  }
+
+  return 0;
 }
 
 // Libera un espacio de memoria dado un puntero.
 int m_seg_free(ptr_t ptr)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  int repr[seg_direction_size];
+  
+  int is_stack = read_va(repr, ptr.addr);
+  
+  size_t off = offset(repr);
+  
+  if (is_stack){
+    printf("Error try to free stack : %ld\n", ptr.addr);
+    return 1;
+  }
+
+  
+
 }
 
 // Agrega un elemento al stack
