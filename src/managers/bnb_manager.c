@@ -39,20 +39,21 @@ int add_pid(int pid)
   int free = get_free_pid();
 
   if (index >= 0 || free < 0)
-    return 1;
+    return -1;
 
   pids[free] = pid;
-  return 0;
+  return free;
 }
 
 int sim_stack_op(int is_del)
 {
   size_t stack_pointer_temp = stack_pointer[current_pid_index] + (is_del ? SIZEOFVALUES : -SIZEOFVALUES);
 
-  if (stack_pointer_temp > bound || stack_pointer_temp < heap_pointer[current_pid_index])
+  if (stack_pointer_temp >= bound || stack_pointer_temp < heap_pointer[current_pid_index])
     return 1;
   return 0;
 }
+
 int valid_stack_op(int is_del)
 {
   if (is_del && sim_stack_op(is_del))
@@ -81,6 +82,7 @@ int delete_addr(addr_t addr)
     return 1;
 
   virtual_mem[current_pid_index][index] = 0;
+  update_heap_pointer();
   return 0;
 }
 
@@ -125,6 +127,23 @@ int resb_addr(size_t index_addr)
   virtual_mem[current_pid_index][index_addr] = 1;
   update_heap_pointer();
   return 0;
+}
+
+int clean_pid(int pid)
+{
+  int index = find_pid(pid);
+
+  if (index < 0)
+    return -1;
+
+  pids[index] = -1;
+
+  stack_pointer[index] = bound - 1;
+  heap_pointer[index] = 0;
+
+  for (size_t i = 0; i < bound; i++)
+    virtual_mem[index][i] = 0;
+  return index;
 }
 
 // Esta función se llama cuando se inicializa un caso de prueba
@@ -192,40 +211,58 @@ int m_bnb_free(ptr_t ptr)
 // Agrega un elemento al stack
 int m_bnb_push(byte val, ptr_t *out)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  if (valid_stack_op(0))
+    return 1;
+  m_write(stack_pointer[current_pid_index] + bases[current_pid_index], val);
+  out->addr = stack_pointer[current_pid_index] + bases[current_pid_index];
+  stack_pointer[current_pid_index] -= SIZEOFVALUES;
+  return 0;
 }
 
 // Quita un elemento del stack
 int m_bnb_pop(byte *out)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  if (valid_stack_op(1))
+    return 1;
+  stack_pointer[current_pid_index] += SIZEOFVALUES;
+  *out = m_read(stack_pointer[current_pid_index] + bases[current_pid_index]);
+  return 0;
 }
 
 // Carga el valor en una dirección determinada
 int m_bnb_load(addr_t addr, byte *out)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  if (in_addr(addr) || !virtual_mem[current_pid_index][find_addr(addr)])
+    return 1;
+  *out = m_read(addr);
+  return 0;
 }
 
 // Almacena un valor en una dirección determinada
 int m_bnb_store(addr_t addr, byte val)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  if (in_addr(addr) || !virtual_mem[current_pid_index][find_addr(addr)])
+    return 1;
+  m_write(addr, val);
+  return 0;
 }
 
 // Notifica un cambio de contexto al proceso 'next_pid'
 void m_bnb_on_ctx_switch(process_t process)
 {
+  set_curr_owner(process.pid);
   current_pid_index = find_pid(process.pid);
+  if (current_pid_index < 0)
+  {
+    current_pid_index = (process.pid);
+    m_set_owner(bases[current_pid_index], bases[current_pid_index] + bound);
+  }
 }
 
 // Notifica que un proceso ya terminó su ejecución
 void m_bnb_on_end_process(process_t process)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  int index = clean_pid(process.pid);
+  if (index >= 0)
+    m_unset_owner(bases[index], bases[index] + bound);
 }
