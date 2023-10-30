@@ -26,8 +26,25 @@ size_t seg_virtual_mem_size;
 int seg_current_pid_index = -1;
 int seg_bits = 1;
 int seg_direction_size = -1;
+/*
+ARREGLAR LAS DIRECCIONES DE MEMORIA
+*/
 
 // Utiles
+
+size_t get_va_stack(int index)
+{
+  return get_from_binary(index);
+}
+
+size_t get_from_binary(int off)
+{
+  size_t value = 1;
+  for (int i = 0; i < seg_direction_size; i++)
+    value *= 2;
+  return value + off;
+}
+
 void binary_representation(int *repr, size_t value)
 {
   for (int i = 0; i < seg_direction_size; i++)
@@ -36,6 +53,7 @@ void binary_representation(int *repr, size_t value)
     value /= 2;
   }
 }
+
 size_t full_offset()
 {
   return m_size();
@@ -47,7 +65,7 @@ size_t offset(int *repr)
   int power = 1;
   for (int i = 0; i < seg_direction_size - seg_bits; i++)
   {
-    offsetv += power * i;
+    offsetv += power * repr[i];
     power *= 2;
   }
   return offsetv;
@@ -184,6 +202,7 @@ int fusion_fit()
 
 int extend_proc(int need_stack, int need_heap)
 {
+  fusion_fit();
   int addr_stack = seg_base[seg_current_pid_index] - seg_bound_stack[seg_current_pid_index];
 
   while (need_stack > 0)
@@ -251,10 +270,11 @@ int create_new_space(size_t need)
     return 1;
   }
 
-  seg_stack[seg_current_pid_index] = 1;
+  seg_stack[seg_current_pid_index] = 0;
   seg_bound_stack[seg_current_pid_index] = seg_default_stack_bound;
 
   seg_base[seg_current_pid_index] = free_space + seg_default_stack_bound;
+
   seg_bound_seg_heap[seg_current_pid_index] = need;
   seg_heap[seg_current_pid_index] = need - 1;
 
@@ -267,9 +287,33 @@ int create_new_space(size_t need)
 void m_seg_init(int argc, char **argv)
 {
   seg_direction_size = how_many_bits_needed(m_size());
+
   printf("Tamanno de la memoria %ld, Se necesitan %d bits para direccionar toda la memoria\n", m_size(), seg_direction_size);
+
   seg_direction_size += seg_bits;
+
   printf("Agg el bit de seg: %d\n", seg_direction_size);
+
+  seg_virtual_mem_size = m_size();
+  seg_virtual_mem = malloc(seg_virtual_mem_size * sizeof(int));
+
+  printf("Iniciando la memoria virtual\n");
+  for (int i = 0; i < seg_virtual_mem_size; i++)
+    seg_virtual_mem[i] = -1;
+
+  seg_pids = malloc(MAX_PROGRAM_COUNT * sizeof(int));
+  seg_base = malloc(MAX_PROGRAM_COUNT * sizeof(addr_t));
+  seg_heap = malloc(MAX_PROGRAM_COUNT * sizeof(size_t));
+  seg_stack = malloc(MAX_PROGRAM_COUNT * sizeof(size_t));
+  seg_bound_seg_heap = malloc(MAX_PROGRAM_COUNT * sizeof(size_t));
+  seg_bound_stack = malloc(MAX_PROGRAM_COUNT * sizeof(size_t));
+
+  seg_default_stack_bound = 10;
+  // seg_default_heap_bound = 10;
+  printf("Iniciando pidds\n");
+
+  for (int i = 0; i < MAX_PROGRAM_COUNT; i++)
+    seg_pids[i] = -1;
 }
 
 // Reserva un espacio en el seg_heap de tamaño 'size' y establece un puntero al
@@ -351,35 +395,118 @@ int m_seg_free(ptr_t ptr)
 // Agrega un elemento al stack
 int m_seg_push(byte val, ptr_t *out)
 {
-  if(seg_stack[seg_current_pid_index] + 1 > )
+  if (seg_stack[seg_current_pid_index] + 1 > seg_bound_stack[seg_current_pid_index])
+  {
+    printf("Se lleno el stack, intentando expandirlo");
+    if (extend_proc(1, 0))
+    {
+      printf("Stack Overflow Stack %d  BoundStack: %d", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
+      return 1;
+    }
+  }
+
+  seg_stack[seg_current_pid_index]++;
+  m_write(seg_base[seg_current_pid_index] - seg_stack[seg_current_pid_index], val);
+  out->addr = get_va_stack(seg_stack[seg_current_pid_index]);
+  return 0;
 }
 
 // Quita un elemento del stack
 int m_seg_pop(byte *out)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  if (seg_stack[seg_current_pid_index] == 0)
+  {
+    printf("Stack Underflow Stack %d  BoundStack: %d", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
+    return 1;
+  }
+
+  *out = m_read(seg_base[seg_current_pid_index] - seg_stack[seg_current_pid_index]);
+  seg_stack[seg_current_pid_index]--;
+  return 0;
 }
 
 // Carga el valor en una dirección determinada
 int m_seg_load(addr_t addr, byte *out)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  int repr[seg_direction_size];
+  int is_stack = read_va(repr, addr);
+
+  if (is_stack)
+  {
+    size_t off = offset(repr);
+    if (off > seg_stack[seg_current_pid_index])
+    {
+      printf("Try read out of Stack %d  BoundStack: %d", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
+      return 1;
+    }
+    *out = m_read(seg_base[seg_current_pid_index] - off);
+    return 0;
+  }
+
+  size_t off = offset(repr);
+  if (off > seg_heap[seg_current_pid_index])
+  {
+    printf("Try read out of alloc, Heap: %d  BoundHeap: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    return 1;
+  }
+
+  if (off >= seg_bound_seg_heap[seg_current_pid_index])
+  {
+    printf("Try read out of Boundheap %d  BoundH: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    return 1;
+  }
+
+  if (seg_virtual_mem[seg_base[seg_current_pid_index] + off] != seg_pids[seg_current_pid_index])
+  {
+    printf("Memory in free space, Owner: %d  Currentpid : %d  \n", seg_virtual_mem[seg_base[seg_current_pid_index] + off], seg_pids[seg_current_pid_index]);
+    return 1;
+  }
+  *out = m_read(seg_base[seg_current_pid_index] + off);
+  return 0;
 }
 
 // Almacena un valor en una dirección determinada
 int m_seg_store(addr_t addr, byte val)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  int repr[seg_direction_size];
+  int is_stack = read_va(repr, addr);
+  if (is_stack)
+  {
+    printf("Try to store in stack \n");
+    return 1;
+  }
+
+  size_t off = offset(repr);
+
+  if (off > seg_heap[seg_current_pid_index])
+  {
+    printf("Try write out of alloc, Heap: %d  BoundHeap: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    return 1;
+  }
+
+  if (off >= seg_bound_seg_heap[seg_current_pid_index])
+  {
+    printf("Try write out of Boundheap %d  BoundH: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    return 1;
+  }
+
+  if (seg_virtual_mem[seg_base[seg_current_pid_index] + off] != seg_pids[seg_current_pid_index])
+  {
+    printf("Memory in free space, Owner: %d  Currentpid : %d  \n", seg_virtual_mem[seg_base[seg_current_pid_index] + off], seg_pids[seg_current_pid_index]);
+    return 1;
+  }
+
+  m_write(seg_base[seg_current_pid_index] + off, val);
+  return 0;
 }
 
 // Notifica un cambio de contexto al proceso 'next_pid'
 void m_seg_on_ctx_switch(process_t process)
 {
   set_curr_owner(process.pid);
+
   seg_current_pid_index = seg_find_pid(process.pid);
+
   if (seg_current_pid_index < 0)
   {
     seg_current_pid_index = seg_add_pid(process.pid);
