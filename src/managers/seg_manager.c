@@ -24,6 +24,7 @@ int *seg_virtual_mem; // -1 if is free, else pid
 size_t seg_virtual_mem_size;
 
 int seg_current_pid_index = -1;
+int is_new = 0;
 int seg_bits = 1;
 int seg_direction_size = -1;
 /*
@@ -32,17 +33,17 @@ ARREGLAR LAS DIRECCIONES DE MEMORIA
 
 // Utiles
 
-size_t get_va_stack(int index)
-{
-  return get_from_binary(index);
-}
-
 size_t get_from_binary(int off)
 {
   size_t value = 1;
   for (int i = 0; i < seg_direction_size; i++)
     value *= 2;
   return value + off;
+}
+
+size_t get_va_stack(int index)
+{
+  return get_from_binary(index);
 }
 
 void binary_representation(int *repr, size_t value)
@@ -298,7 +299,7 @@ void m_seg_init(int argc, char **argv)
   seg_virtual_mem = malloc(seg_virtual_mem_size * sizeof(int));
 
   printf("Iniciando la memoria virtual\n");
-  for (int i = 0; i < seg_virtual_mem_size; i++)
+  for (size_t i = 0; i < seg_virtual_mem_size; i++)
     seg_virtual_mem[i] = -1;
 
   seg_pids = malloc(MAX_PROGRAM_COUNT * sizeof(int));
@@ -320,11 +321,12 @@ void m_seg_init(int argc, char **argv)
 // inicio del espacio reservado.
 int m_seg_malloc(size_t size, ptr_t *out)
 {
-  if (seg_base[seg_current_pid_index] < 0)
+  if (is_new)
   {
+    is_new = 0;
     printf("Creando nuevo espacio de direccion\n");
     create_new_space(size);
-    printf("Se creo un nuevo espacio de direccion\n Base:%d Heap:%d  Bound:%d\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    printf("Se creo un nuevo espacio de direccion\n Base: %ld Heap: %ld  Bound:%ld \n", seg_base[seg_current_pid_index], seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
     out->addr = 0;
     return 0;
   }
@@ -333,20 +335,20 @@ int m_seg_malloc(size_t size, ptr_t *out)
 
   if (seg_find_malloc_size(size, slot))
   {
-    printf("Error: No hay espacio para crear un nuevo proceso, hay que extender el heap Heap:%d Bound%d\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    printf("Error: No hay espacio para crear un nuevo proceso, hay que extender el heap Heap: %ld Bound %ld\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
 
     if (fusion_fit() && extend_proc(0, seg_bound_seg_heap[seg_current_pid_index] - seg_heap[seg_current_pid_index] + size))
     {
       printf("Error: No se pudo extender el heap\n");
       return 1;
     }
-    printf("Se extendio el heap dentro de su bound Heap:%d  Bound:%d\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    printf("Se extendio el heap dentro de su bound Heap:%ld  Bound:%ld\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
     out->addr = seg_heap[seg_current_pid_index] + 1;
   }
 
   else
   {
-    printf("Se encontro espacio para crear un nuevo proceso dentro del propio heap %d -> %d\n", slot[0], slot[size - 1]);
+    printf("Se encontro espacio para crear un nuevo proceso dentro del propio heap %ld -> %ld\n", slot[0], slot[size - 1]);
     seg_resb(slot[0], slot[size - 1] + 1);
     m_set_owner(slot[0], slot[size - 1]);
     out->addr = slot[0];
@@ -400,7 +402,7 @@ int m_seg_push(byte val, ptr_t *out)
     printf("Se lleno el stack, intentando expandirlo");
     if (extend_proc(1, 0))
     {
-      printf("Stack Overflow Stack %d  BoundStack: %d", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
+      printf("Stack Overflow Stack %ld  BoundStack: %ld", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
       return 1;
     }
   }
@@ -416,7 +418,7 @@ int m_seg_pop(byte *out)
 {
   if (seg_stack[seg_current_pid_index] == 0)
   {
-    printf("Stack Underflow Stack %d  BoundStack: %d", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
+    printf("Stack Underflow Stack %ld  BoundStack: %ld", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
     return 1;
   }
 
@@ -436,7 +438,7 @@ int m_seg_load(addr_t addr, byte *out)
     size_t off = offset(repr);
     if (off > seg_stack[seg_current_pid_index])
     {
-      printf("Try read out of Stack %d  BoundStack: %d", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
+      printf("Try read out of Stack %ld  BoundStack: %ld", seg_stack[seg_current_pid_index], seg_bound_stack[seg_current_pid_index]);
       return 1;
     }
     *out = m_read(seg_base[seg_current_pid_index] - off);
@@ -446,13 +448,13 @@ int m_seg_load(addr_t addr, byte *out)
   size_t off = offset(repr);
   if (off > seg_heap[seg_current_pid_index])
   {
-    printf("Try read out of alloc, Heap: %d  BoundHeap: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    printf("Try read out of alloc, Heap: %ld  BoundHeap: %ld", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
     return 1;
   }
 
   if (off >= seg_bound_seg_heap[seg_current_pid_index])
   {
-    printf("Try read out of Boundheap %d  BoundH: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    printf("Try read out of Boundheap %ld  BoundH: %ld", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
     return 1;
   }
 
@@ -480,13 +482,13 @@ int m_seg_store(addr_t addr, byte val)
 
   if (off > seg_heap[seg_current_pid_index])
   {
-    printf("Try write out of alloc, Heap: %d  BoundHeap: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    printf("Try write out of alloc, Heap: %ld  BoundHeap: %ld", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
     return 1;
   }
 
   if (off >= seg_bound_seg_heap[seg_current_pid_index])
   {
-    printf("Try write out of Boundheap %d  BoundH: %d", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
+    printf("Try write out of Boundheap %ld  BoundH: %ld", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
     return 1;
   }
 
@@ -509,8 +511,8 @@ void m_seg_on_ctx_switch(process_t process)
 
   if (seg_current_pid_index < 0)
   {
+    is_new = 1;
     seg_current_pid_index = seg_add_pid(process.pid);
-    seg_base[seg_current_pid_index] = -1;
   }
 }
 
@@ -519,7 +521,7 @@ void m_seg_on_end_process(process_t process)
 {
   seg_del_pid(process.pid);
 
-  for (int i = 0; i < seg_virtual_mem_size; i++)
+  for (size_t i = 0; i < seg_virtual_mem_size; i++)
     if (seg_virtual_mem[i] == process.pid)
     {
       seg_virtual_mem[i] = -1;
