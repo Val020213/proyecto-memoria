@@ -59,28 +59,6 @@ int read_va(int *repr, size_t va) // return 1 if from stack
   return repr[seg_direction_size - seg_bits] == 1;
 }
 
-int get_pa(addr_t va_addr, addr_t *pa)
-{
-  int repr[seg_direction_size];
-  int is_stack = read_va(repr, va_addr);
-  size_t off = offset(repr);
-
-  if (is_stack && full_offset() - off >= seg_bound_stack[seg_current_pid_index])
-  {
-    printf("Out of bounds Offset: %ld  Bounds: %ld  IsStack: %d", off, seg_bound_stack[seg_current_pid_index], is_stack);
-    return 1;
-  }
-
-  if (!is_stack && off >= seg_bound_seg_heap[seg_current_pid_index])
-  {
-    printf("Out of bounds Offset: %ld  Bounds: %ld  IsStack: %d", off, seg_bound_seg_heap[seg_current_pid_index], is_stack);
-    return 1;
-  }
-
-  *pa = seg_base[seg_current_pid_index] + (is_stack) ? off - full_offset() : off;
-  return 0;
-}
-
 int how_many_bits_needed(size_t memory_size) // buscar si C tiene un log?
 {
   int bits = 0;
@@ -182,18 +160,26 @@ int first_fit(size_t need)
   return -1;
 }
 
-void fusion_fit()
+int fusion_fit()
 {
   for (int i = 0; i < seg_valid_count; i++)
   {
     if (seg_pids[i] >= 0)
     {
-      if (seg_stack[i] < seg_bound_stack[i] - 1)
+      if (seg_stack[i] < seg_bound_stack[i])
+      {
         free_v_memo(seg_stack[i], seg_bound_stack[i]);
+        seg_bound_stack[i] = seg_stack[i] + 1;
+      }
+
       if (seg_heap[i] < seg_bound_seg_heap[i] - 1)
+      {
         free_v_memo(seg_heap[i], seg_bound_seg_heap[i]);
+        seg_bound_seg_heap[i] = seg_heap[i] + 1;
+      }
     }
   }
+  return 1;
 }
 
 int extend_proc(int need_stack, int need_heap)
@@ -211,6 +197,7 @@ int extend_proc(int need_stack, int need_heap)
     addr_stack--;
     need_stack--;
   }
+
   seg_resb(addr_stack, seg_base[seg_current_pid_index] - seg_bound_stack[seg_current_pid_index]);
   m_set_owner(addr_stack, seg_base[seg_current_pid_index] - seg_bound_stack[seg_current_pid_index]);
   seg_bound_stack[seg_current_pid_index] += need_stack;
@@ -258,7 +245,7 @@ int create_new_space(size_t need)
 {
   int free_space = first_fit(need + seg_default_stack_bound);
 
-  if (free_space < 0)
+  if (free_space < 0 && fusion_fit() && (free_space = first_fit(need + seg_default_stack_bound)) < 0)
   {
     printf("Error: No hay espacio para crear un nuevo proceso\n");
     return 1;
@@ -304,7 +291,7 @@ int m_seg_malloc(size_t size, ptr_t *out)
   {
     printf("Error: No hay espacio para crear un nuevo proceso, hay que extender el heap Heap:%d Bound%d\n", seg_heap[seg_current_pid_index], seg_bound_seg_heap[seg_current_pid_index]);
 
-    if (extend_proc(0, seg_bound_seg_heap[seg_current_pid_index] - seg_heap[seg_current_pid_index] + size))
+    if (fusion_fit() && extend_proc(0, seg_bound_seg_heap[seg_current_pid_index] - seg_heap[seg_current_pid_index] + size))
     {
       printf("Error: No se pudo extender el heap\n");
       return 1;
@@ -328,25 +315,43 @@ int m_seg_malloc(size_t size, ptr_t *out)
 int m_seg_free(ptr_t ptr)
 {
   int repr[seg_direction_size];
-  
+
   int is_stack = read_va(repr, ptr.addr);
-  
+
   size_t off = offset(repr);
-  
-  if (is_stack){
+
+  if (is_stack)
+  {
     printf("Error try to free stack : %ld\n", ptr.addr);
     return 1;
   }
 
-  
+  if (off > seg_heap[seg_current_pid_index])
+  {
+    printf("Not allocated memory, offset: %ld heap: %ld\n", off, seg_heap[seg_current_pid_index]);
+    return 1;
+  }
 
+  if (off > seg_bound_seg_heap[seg_current_pid_index])
+  {
+    printf("Try to access to memory out of bound, offset: %ld bound: %ld\n", off, seg_bound_seg_heap[seg_current_pid_index]);
+    return 1;
+  }
+
+  if (seg_virtual_mem[off] != seg_pids[seg_current_pid_index])
+  {
+    printf("Error: Try to free memory that is not of current proc: %d  Owner: %d\n", seg_pids[seg_current_pid_index], seg_virtual_mem[off]);
+    return 1;
+  }
+
+  seg_virtual_mem[off] = -1;
+  return 0;
 }
 
 // Agrega un elemento al stack
 int m_seg_push(byte val, ptr_t *out)
 {
-  fprintf(stderr, "Not Implemented\n");
-  exit(1);
+  if(seg_stack[seg_current_pid_index] + 1 > )
 }
 
 // Quita un elemento del stack
