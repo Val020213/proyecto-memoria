@@ -33,6 +33,17 @@ ARREGLAR LAS DIRECCIONES DE MEMORIA
 
 // Utiles
 
+void seg_update_heap()
+{
+  for (size_t i = 0; i < seg_bound_seg_heap[seg_current_pid_index]; i++)
+  {
+    if (seg_virtual_mem[seg_base[seg_current_pid_index] + i] == seg_pids[seg_current_pid_index])
+    {
+      seg_heap[seg_current_pid_index] = i;
+    }
+  }
+}
+
 size_t get_from_binary(int off)
 {
   size_t value = 1;
@@ -390,7 +401,8 @@ int m_seg_free(ptr_t ptr)
     return 1;
   }
 
-  seg_virtual_mem[off] = -1;
+  seg_virtual_mem[seg_base[seg_current_pid_index] + off] = -1;
+  seg_update_heap();
   return 0;
 }
 
